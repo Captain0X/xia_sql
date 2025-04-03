@@ -1,10 +1,12 @@
-package burp;
+package org.burp;
 
+import burp.*;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONException;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.awt.Component;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
@@ -16,6 +18,8 @@ import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.TableModel;
 import javax.swing.JLabel;
@@ -27,10 +31,9 @@ import java.awt.event.ItemListener;
 import javax.swing.JMenuItem;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-
-
 
 public class BurpExtender extends AbstractTableModel implements IBurpExtender, ITab, IHttpListener,IScannerCheck, IMessageEditorController,IContextMenuFactory
 {
@@ -51,7 +54,7 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
     int conut = 0; //记录条数
     String data_md5_id; //用于判断目前选中的数据包
     public AbstractTableModel model = new MyModel();
-    int original_data_len;//记录原始数据包的长度
+    //int original_data_len;//记录原始数据包的长度
     int is_int = 1; //开关 0关 1开;//纯数据是否进行-1，-0
     String temp_data; //用于保存临时内容
     int JTextArea_int = 0;//自定义payload开关  0关 1开
@@ -63,9 +66,9 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
     int is_cookie = -1;//cookie是否要注入，-1关闭 2开启。
     String white_URL = "";
     int white_switchs = 0;//白名单开关
-
-
-
+    String customParamsTextAreaData = "";//文本域的内容
+    int JTextAreaCustomParams= 0;//自定义参数开关  0关 1开
+    int customParamsAddpayload= 0;//自定义参数开关  0关 1开
 
 
     //
@@ -111,16 +114,23 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
 
 
                 //test
-                JPanel jp=new JPanel();
-                JLabel jl=new JLabel("==>");    //创建一个标签
+
+                JPanel jp=new JPanel(new BorderLayout());
+                JLabel jl=new JLabel("==>");//创建一个标签
+                jl.setMaximumSize(new Dimension(5,100));
 
                 Table_log2 table=new Table_log2(model);
                 JScrollPane pane=new JScrollPane(table);//给列表添加滚动条
+                JSplitPane splitlogPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+                splitlogPane.setLeftComponent(scrollPane);
+                JSplitPane splitresultPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+                splitresultPane.setLeftComponent(jl);
+                splitresultPane.setRightComponent(pane);
+                splitresultPane.setDividerLocation(30); // Set divider to a fixed position
+                splitresultPane.setEnabled(false); // Disable resizing
+                splitlogPane.setRightComponent(splitresultPane);
 
-                jp.add(scrollPane);    //将表格加到面板
-                jp.add(jl);    //将标签添加到面板
-                jp.add(pane);    //将表格加到面板
-
+                jp.add(splitlogPane);
                 //侧边复选框
                 JPanel jps=new JPanel();
                 jps.setLayout(new GridLayout(18, 1)); //六行一列
@@ -137,6 +147,9 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                 JCheckBox chkbox6=new JCheckBox("自定义payload中空格url编码",true);    //创建指定文本的复选框
                 JCheckBox chkbox7=new JCheckBox("自定义payload中参数值置空");    //创建指定文本的复选框
                 JCheckBox chkbox8=new JCheckBox("测试Cookie");    //创建指定文本的复选框
+                JCheckBox customParamsCheckbox =new JCheckBox("开启额外参数");
+                JCheckBox customParamsAddPayloadCheckbox =new JCheckBox("额外参数应用payload");
+                JButton customParamsPersistBtn=new JButton("持久化额外参数");    //创建JButton对象
                 JLabel jls_5=new JLabel("如果需要多个域名加白请用,隔开");    //创建一个标签
                 JTextField textField = new JTextField("填写白名单域名");//白名单文本框
 
@@ -146,10 +159,14 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                 JButton btn2=new JButton("加载/重新加载payload");    //创建JButton对象
                 JButton btn3=new JButton("启动白名单");    //处理白名单
 
+
                 //自定义payload区
                 JPanel jps_2=new JPanel();
-                jps_2.setLayout(new GridLayout(1, 1)); //六行一列
-                JTextArea jta=new JTextArea("%df' and sleep(3)%23\n'and '1'='1",18,16);
+
+                jps_2.setLayout(new BorderLayout());
+                jps_2.setMinimumSize(new Dimension(100,200));
+                JTextArea jta=new JTextArea("[\"'\",\"''\"] \n[\"-0\"，\"-1\"];;;[0-9]+",10,16);
+                JTextArea jta2=new JTextArea("",10,16);
 
                 //读取ini配置文件
                 try {
@@ -159,6 +176,14 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                         str_data += str+"\n";
                     }
                     jta.setText(str_data);
+
+                    BufferedReader in2 = new BufferedReader(new FileReader("xia_SQL_diy_customParam.ini"));
+                    String str2,str_data2="";
+                    while ((str2 = in2.readLine()) != null) {
+                        str_data2 += str2+"\n";
+                    }
+                    jta2.setText(str_data2);
+
                 } catch (IOException e) {
                 }
 
@@ -168,7 +193,25 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                 jta.setBackground(Color.LIGHT_GRAY);    //设置背景色
                 jta.setEditable(false);//不可编辑状态
                 JScrollPane jsp=new JScrollPane(jta);    //将文本域放入滚动窗口
-                jps_2.add(jsp);    //将JScrollPane添加到JPanel容器中
+                jps_2.add(jsp,BorderLayout.CENTER);
+
+                //自定义参数区
+                JPanel customParamsLabPanel=new JPanel();
+                customParamsLabPanel.setLayout(new BorderLayout());
+                JPanel customParamsCheck = new JPanel(new FlowLayout(FlowLayout.LEFT));
+                customParamsCheckbox.setMaximumSize(new Dimension(100,100));
+                customParamsAddPayloadCheckbox.setMaximumSize(new Dimension(100,100));
+                customParamsCheck.add(customParamsCheckbox);
+                customParamsCheck.add(customParamsAddPayloadCheckbox);
+                customParamsCheck.add(customParamsPersistBtn);
+                customParamsLabPanel.add(customParamsCheck, BorderLayout.NORTH);
+
+                jta2.setForeground(Color.BLACK);    //设置组件的背景色
+                jta2.setFont(new Font("楷体",Font.BOLD,16));    //修改字体样式
+                jta2.setBackground(Color.LIGHT_GRAY);    //设置背景色
+                jta2.setEditable(false);//不可编辑状态
+                JScrollPane jsp2=new JScrollPane(jta2);
+                customParamsLabPanel.add(jsp2, BorderLayout.CENTER);
 
                 //添加复选框监听事件
                 chkbox1.addItemListener(new ItemListener() {
@@ -243,6 +286,37 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                             jta.setEditable(false);
                             jta.setBackground(Color.LIGHT_GRAY);    //设置背景色
                             JTextArea_int = 0;
+                        }
+                    }
+                });
+
+                customParamsCheckbox.addItemListener(new ItemListener() {
+                    @Override
+                    public void itemStateChanged(ItemEvent e) {
+                        if(customParamsCheckbox.isSelected()) {
+                            stdout.println("启动 自定义参数");
+                            jta2.setEditable(true);
+                            jta2.setBackground(Color.WHITE);    //设置背景色
+                            JTextAreaCustomParams = 1;
+                            customParamsTextAreaData = jta2.getText();
+                        }else {
+                            stdout.println("关闭 自定义参数");
+                            jta2.setEditable(false);
+                            jta2.setBackground(Color.LIGHT_GRAY);    //设置背景色
+                            JTextAreaCustomParams = 0;
+                        }
+                    }
+                });
+
+                customParamsAddPayloadCheckbox.addItemListener(new ItemListener() {
+                    @Override
+                    public void itemStateChanged(ItemEvent e) {
+                        if(customParamsAddPayloadCheckbox.isSelected()) {
+                            stdout.println("启动 自定义参数应用payload");
+                            customParamsAddpayload = 1;
+                        }else {
+                            stdout.println("关闭 自定义参数应用payload");
+                            customParamsAddpayload = 0;
                         }
                     }
                 });
@@ -325,6 +399,22 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                         }
                     }
                 });
+
+                customParamsPersistBtn.addActionListener(new ActionListener() {//加载自定义payload
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        //写入ini配置文件
+                        try {
+
+                            BufferedWriter out2 = new BufferedWriter(new FileWriter("xia_SQL_diy_customParam.ini"));
+                            out2.write(customParamsTextAreaData);
+                            out2.close();
+                        } catch (IOException exception) {
+                        }
+                    }
+                });
+
+
                 btn3.addActionListener(new ActionListener() {//加载自定义payload
                     @Override
                     public void actionPerformed(ActionEvent e) {
@@ -343,6 +433,26 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                     }
                 });
 
+                jta2.getDocument().addDocumentListener(new DocumentListener() {
+                    @Override
+                    public void insertUpdate(DocumentEvent e) {
+                        updateCustomParamsTextAreaData();
+                    }
+
+                    @Override
+                    public void removeUpdate(DocumentEvent e) {
+                        updateCustomParamsTextAreaData();
+                    }
+
+                    @Override
+                    public void changedUpdate(DocumentEvent e) {
+                        updateCustomParamsTextAreaData();
+                    }
+
+                    private void updateCustomParamsTextAreaData() {
+                        customParamsTextAreaData = jta2.getText();
+                    }
+                });
                 jps.add(jls);
                 jps.add(jls_1);
                 jps.add(jls_2);
@@ -360,12 +470,8 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                 jps.add(chkbox5);
                 jps.add(chkbox6);
                 jps.add(chkbox7);
+               // jps.add(customParamsCheckbox);
                 jps.add(btn2);
-
-
-
-
-
 
                 // tabs with request/response viewers
                 JTabbedPane tabs = new JTabbedPane();
@@ -378,8 +484,11 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
 
                 //右边
                 splitPanes_2.setLeftComponent(jps);//上面
-                splitPanes_2.setRightComponent(jps_2);//下面
-
+                JSplitPane splitPanes_4 = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+                splitPanes_4.setLeftComponent(jps_2);
+                splitPanes_4.setRightComponent(customParamsLabPanel);
+               // splitPanes_2.setRightComponent(jps_2);//下面
+                splitPanes_2.setRightComponent(splitPanes_4);
                 //左边
                 splitPanes.setLeftComponent(jp);//上面
                 splitPanes.setRightComponent(tabs);//下面
@@ -511,13 +620,14 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
     }
 
     private void checkVul(IHttpRequestResponse baseRequestResponse, int toolFlag){
-
-            int is_add; //用于判断是否要添加扫描
+            int original_data_len = 0;
+            int is_add=0; //用于判断是否要添加扫描
             String change_sign_1 = ""; //用于显示第一个列表框的状态 变化 部分的内容
 
             //把当前url和参数进行md5加密，用于判断该url是否已经扫描过
-            List<IParameter>paraLists= helpers.analyzeRequest(baseRequestResponse).getParameters();
+            List<IParameter> paraLists= helpers.analyzeRequest(baseRequestResponse).getParameters();
             temp_data = String.valueOf(helpers.analyzeRequest(baseRequestResponse).getUrl());//url
+            String method  = helpers.analyzeRequest(baseRequestResponse).getMethod();
             //stdout.println(temp_data);
             String[] temp_data_strarray=temp_data.split("\\?");
             String temp_data =(String) temp_data_strarray[0];//获取问号前面的字符串
@@ -541,14 +651,15 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
 
             //用于判断页面后缀是否为静态文件
             if(toolFlag == 4 || toolFlag ==64){//流量是Repeater与proxy来的就对其后缀判断
-                String[] static_file = {"jpg","png","gif","css","js","pdf","mp3","mp4","avi"};
-                String[] static_file_1 =temp_data.split("\\.");
-                String static_file_2 = static_file_1[static_file_1.length-1];//获取最后一个.内容
-                //this.stdout.println(static_file_2);
-                for(String i:static_file){
-                    if(static_file_2.equals(i)){
-                        this.stdout.println("当前url为静态文件："+temp_data+"\n");
-                        return;
+                String[] static_file = {"jpg","png","gif","css","js","pdf","mp3","mp4","avi","webp","woff","woff2","doc","docx","csv","xls","xlsx","map","svg"};
+                if(temp_data != null && temp_data.contains(".")) {
+                    String[] static_file_1 = temp_data.split("\\.");
+                    String static_file_2 = static_file_1[static_file_1.length-1].toLowerCase();
+                    for(String i : static_file) {
+                        if(static_file_2.equals(i)) {
+                            this.stdout.println("当前url为静态文件："+temp_data+"\n");
+                            return;
+                        }
                     }
                 }
             }
@@ -623,7 +734,7 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
 
                 int row = log.size();
                 try{
-                    original_data_len = callbacks.saveBuffersToTempFiles(baseRequestResponse).getResponse().length;//更新原始数据包的长度
+                    original_data_len = callbacks.saveBuffersToTempFiles(baseRequestResponse).getResponse().length;//获取原始数据包的长度
                     stdout.println(original_data_len);
                     if(original_data_len <= 0){
                         stdout.println("该数据包无响应");
@@ -649,7 +760,7 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
             //****************************************
             String para_name = "";//用来记录上一次循环的参数名
             for (IParameter para : paraList){// 循环获取参数
-                int switch_para = 0;//用来判断该参数是否要处理 0 要处理 1 跳过
+                //int switch_para = 0;//用来判断该参数是否要处理 0 要处理 1 跳过
 
                 if(para.getType() == 6){
                     json_count += 1;
@@ -674,240 +785,59 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
                         }
                     }
 
-                    //自定义payload
-                    if(JTextArea_int == 1){
-                        String[] JTextArea_data = JTextArea_data_1.split("\n");
-                        for(String a:JTextArea_data){
-                            //stdout.println(a);
-                            //stdout.println("------");
-                            payloads.add(a);
-                        }
-                    }
-
-                    int change = 0; //用于判断返回包长度是否一致、保存第一次请求响应的长度
-
-                    //****************************************
-                    // 循环payload
-                    //****************************************
-                    for (String payload : payloads) {
-                        int time_1 = 0,time_2 = 0;
-
-                        if(JTextArea_int == 1){
-                            //自定义payload //参数值为空
-                            if(diy_payload_2 == 1){
-                                if(payload != "'" && payload !="''" && payload != "-1" && payload != "-0"){
-                                    value = "";
-                                }
-                            }
-                        }
-
-                        //stdout.println(key+":"+value+payload);//输出添加payload的键和值
-                        IHttpService iHttpService = baseRequestResponse.getHttpService();
-
-                        //新的请求包
-                        IHttpRequestResponse requestResponse = null; //用于过if内的变量
-                        
-                        if(para.getType() == 6){
-                            List<String> headers = helpers.analyzeRequest(baseRequestResponse).getHeaders();
-                            if(is_add ==1) {
-                                //json格式
-                                stdout.println("json");
-                                String newBody = "{"; //json body的内容
-
-                                for (IParameter paras : paraList) {//循环所有参数，用来自定义json格式body做准备
-                                    if (paras.getType() == 6) {//只要json格式的数据
-                                        if (key == paras.getName() && value == paras.getValue()) {//判断现在的键和值是否是需要添加payload的键和值
-                                            newBody += "\"" + paras.getName() + "\":" + "\"" + paras.getValue() + payload + "\",";//构造json的body
-                                        } else {
-                                            newBody += "\"" + paras.getName() + "\":" + "\"" + paras.getValue() + "\",";//构造json的body
-                                        }
-                                    }
-                                }
-
-                                newBody = newBody.substring(0, newBody.length() - 1); //去除最后一个,
-                                newBody += "}";//json body的内容
-
-                                byte[] bodyByte = newBody.getBytes();
-                                byte[] new_Requests = helpers.buildHttpMessage(headers, bodyByte); //关键方法
-
-                                time_1 = (int) System.currentTimeMillis();
-                                requestResponse = callbacks.makeHttpRequest(iHttpService, new_Requests);//发送请求
-                                time_2 = (int) System.currentTimeMillis();
-                            }else if (is_add ==2){
-                                //json嵌套
-                                //stdout.println("json嵌套");
-
-                                request_data = request_data.replaceAll("\r","");//burp2.x json自动格式美化处理
-                                request_data = request_data.replaceAll("\n","");//burp2.x json自动格式美化处理
-
-                                String[] request_data_temp = request_data.split(",\"");//用于临时保存切割的post体内容
-                                String request_data_body = "";//连接字符串
-                                String request_data_body_temp = "";//修改后的body和需要临时编辑的字符串
-
-
-                                for(int i=0;i < request_data_temp.length;i++){
-                                    if(i==json_count){//判断现在修改的参数
-                                        request_data_body_temp = request_data_temp[i];
-
-                                        stdout.println("准备修改的值："+request_data_body_temp);
-                                        while (true){
-                                            //空列表如："test":[]跳过处理
-                                            if(request_data_body_temp.contains(":[]")) {
-                                                stdout.println(request_data_body_temp+"跳过");
-                                                request_data_body += "\""+request_data_temp[i]+",";//把跳过的字符串连接上
-                                                json_count += 1;
-                                                i += 1;
-                                                request_data_body_temp = request_data_temp[i];
-                                            }else {
-                                                break;
-                                            }
-                                        }
-
-
-                                        //null、true、false等跳过处理
-                                        if(request_data_body_temp.toLowerCase().contains(":null") || request_data_body_temp.toLowerCase().contains(":true") || request_data_body_temp.toLowerCase().contains(":false")) {
-                                            stdout.println(request_data_body_temp+"跳过");
-                                            switch_para = 1;
-                                            break;
-                                        }
-
-
-                                        if(request_data_body_temp.contains("\":")){
-
-                                            if(para.getName().equals(para_name)){
-                                                //处理json嵌套列表，这种情况只跑一次
-                                                stdout.println("json嵌套列表，这个参数处理过了，跳过");
-                                                json_count -= 1;
-                                                switch_para = 1;
-                                                break;
-                                            }
-
-                                            //判断字符串中是否有":，如果有则为正常json内容
-                                            Pattern p = Pattern.compile(".*:\\s?\\[?\\s?(.*?$)");
-                                            Matcher m = p.matcher(request_data_body_temp);
-                                            if(m.find()){
-                                                request_data_body_temp = m.group(1);//获取:后面的内容
-                                            }
-                                            if(request_data_body_temp.contains("\"")){//判断内容是否为字符串
-                                                request_data_body_temp = request_data_temp[i];
-                                                //修改内容，添加payload
-                                                request_data_body_temp = request_data_body_temp.replaceAll("^(.*:.*?\")(.*?)(\"[^\"]*)$","$1$2"+payload+"$3");
-                                                stdout.println(request_data_body_temp);
-                                                request_data_body+= "\""+request_data_body_temp +",";
-                                            }else {
-                                                request_data_body_temp = request_data_temp[i];
-                                                //修改内容，添加payload  纯数字
-                                                request_data_body_temp = request_data_body_temp.replaceAll("^(.*:.*?)(\\d*)([^\"\\d]*)$","$1\"$2"+payload+"\"$3");
-                                                stdout.println(request_data_body_temp);
-                                                request_data_body+= "\""+request_data_body_temp +",";
-                                            }
-
-                                        }else {
-                                            stdout.println("处理过，无需处理");
-                                            switch_para = 1;
-                                            if(para.getName().equals(para_name)){
-                                                //处理json嵌套列表，这种情况只跑一次
-                                                stdout.println("json嵌套列表，已经处理过第一个值");
-                                            }
-                                            break;
-
-                                            /*
-                                            //字符串中没有":，表示json格式中嵌套的列表
-
-                                            if(request_data_body_temp.contains("\"")) {//判断内容是否为字符串
-                                                //修改内容，添加payload
-                                                request_data_body_temp = request_data_body_temp.replaceAll("^(\")(.*?)(\".*?)$","$1$2"+payload+"$3");
-                                                request_data_body+= "\""+request_data_body_temp +",";
-                                            }else {
-                                                //不是字符串，则为纯数字
-                                                request_data_body_temp = request_data_body_temp.replaceAll("^(\\d*)(.*?)$","\"$1"+payload+"\"$2");
-                                                request_data_body+= "\""+request_data_body_temp +",";
-                                            }
-                                            */
-                                        }
-                                        //stdout.println(request_data_body_temp);
-
-
-                                    }else {
-                                        request_data_body += "\""+request_data_temp[i]+",";
-                                    }
-                                }
-
-                                if(switch_para == 1){
-                                    //跳过这个参数
-                                    break;
-                                }
-                                if(para.getName().equals(para_name)){
-                                    //处理json嵌套列表，这种情况只跑一次
-                                    stdout.println("json嵌套列表，已经处理过第一个值!!!!");
-                                }
-
-
-                                request_data_body = request_data_body.substring(0, request_data_body.length() - 1); //去除最后一个,
-                                request_data_body = request_data_body.substring(1,request_data_body.length()); //去除第一个"
-
-                                byte[] bodyByte = request_data_body.getBytes();
-                                byte[] new_Requests = helpers.buildHttpMessage(headers, bodyByte); //关键方法
-                                time_1 = (int) System.currentTimeMillis();
-                                requestResponse = callbacks.makeHttpRequest(iHttpService, new_Requests);//发送请求
-                                time_2 = (int) System.currentTimeMillis();
-
-                            }
-                        }else {
-                            stdout.println("普通格式");
-                            //不是json格式
-                            IParameter newPara = helpers.buildParameter(key,value + payload, para.getType()); //构造新的参数
-                            byte[] newRequest = helpers.updateParameter(new_Request, newPara);//更新请求包的参数
-
-                            time_1 = (int) System.currentTimeMillis();
-                            requestResponse = callbacks.makeHttpRequest(iHttpService, newRequest);//发送请求
-                            time_2 = (int) System.currentTimeMillis();
-
-                        }
-
-                        //判断数据长度是否会变化
-                        String change_sign;//第二个表格中 变化 的内容
-                        if(payload == "'" || payload == "-1" || change == 0){
-                            change = requestResponse.getResponse().length;//保存第一次请求响应的长度
-                            change_sign = "";
-                        }else{
-                            if(payload == "''" || payload == "-0" ){
-                                if(change != requestResponse.getResponse().length){//判断第一次的长度和现在的是否不同
-                                    if(payload == "''" && requestResponse.getResponse().length == original_data_len || payload == "-0" && requestResponse.getResponse().length == original_data_len){//判断两个单引号的长度和第一次的不一样且和原始包的长度一致
-                                        //原始包的长度和两个双引号的长度相同且和一个单引号的长度不同
-                                        change_sign = "✔ ==> ?";
-                                        change_sign_1 = " ✔";
-                                    }else{
-                                        //第一次的包和第二次包的长度不同
-                                        change_sign = "✔ "+ (change-requestResponse.getResponse().length);
-                                        change_sign_1 = " ✔";
-                                    }
-                                }else {
-                                    //第一次包和第二次包的长度一样
-                                    change_sign = "";
-                                }
-                            }else {
-                                //自定义payload
-                                if(time_2-time_1 >= 3000){
-                                    //响应时间大于3秒
-                                    change_sign = "time > 3";
-                                    change_sign_1 = " ✔";
-                                }else {
-                                    change_sign = "diy payload";
-                                }
-                            }
-
-                        }
-                        //把响应内容保存在log2中
-                        log2.add(new LogEntry(conut,toolFlag, callbacks.saveBuffersToTempFiles(requestResponse),helpers.analyzeRequest(requestResponse).getUrl(),key,value+payload,change_sign,temp_data,time_2-time_1,"end",helpers.analyzeResponse(requestResponse.getResponse()).getStatusCode()));
-
-                    }
+                    change_sign_1 = execPlayLoad(baseRequestResponse,key,value,toolFlag,temp_data,para.getType(),is_add,request_data
+                            ,json_count,para_name);
                 }
+
                 para_name = para.getName();//用于判断json嵌套里面有列表，列表中带值只跑一次
                 stdout.println(json_count);
 
             }
+            //必须是get请求，且is_add！=0，页面勾选了 启动额外参数按钮,参数框必须填写了，才执行该逻辑
+            if("GET".equals(method)&&is_add != 0&&JTextAreaCustomParams==1&&StringUtils.isNotBlank(customParamsTextAreaData)){
+                //添加自定义参数
+                String[] curstomParams= customParamsTextAreaData.split("\n");;
+                for(String curstomParam:curstomParams){
+                    int time_1 = 0,time_2 = 0;
+                    //stdout.println(key+":"+value+payload);//输出添加payload的键和值
+                    IHttpService iHttpService = baseRequestResponse.getHttpService();
+                    //新的请求包
+                    IHttpRequestResponse requestResponse = null; //用于过if内的变量
+                    stdout.println("普通格式");
+                    String[] parts = curstomParam.split("="); // Split by "="
+                    if (parts.length != 2||StringUtils.isBlank(parts[0])) {
+                        continue;//防止页面内容错误异常
+                    }
+                    String key = parts[0]; // Extract key
+                    String value = parts[1]; // Extract value
+                    stdout.println("Key: " + key + ", Value: " + value); // Output key and value
+                    //不是json格式
+                    IParameter newPara = helpers.buildParameter(key,value, IParameter.PARAM_URL); //构造新的参数
+                    byte[] newRequest = helpers.updateParameter(new_Request, newPara);//更新请求包的参数
+                    time_1 = (int) System.currentTimeMillis();
+                    requestResponse = callbacks.makeHttpRequest(iHttpService, newRequest);//发送请求
+                    time_2 = (int) System.currentTimeMillis();
+                    int newReposeLen = requestResponse.getResponse().length;
+                    String change_sign = "";
+                    if(newReposeLen!=original_data_len){
+                        change_sign = "✔ ==> ?";
+                        change_sign_1 = "✔";
+                    }else{
+                        //第一次包和第二次包的长度一样
+                        change_sign = "";
+                    }
+                    log2.add(new LogEntry(conut,toolFlag, callbacks.saveBuffersToTempFiles(requestResponse),helpers.analyzeRequest(requestResponse).getUrl(),key,value,change_sign,temp_data,time_2-time_1,"end",helpers.analyzeResponse(requestResponse.getResponse()).getStatusCode()));
+                    //页面勾选了额外参数应用payload
+                    if(customParamsAddpayload==1){
+                        String result = execPlayLoad(baseRequestResponse,key,value,toolFlag,temp_data,IParameter.PARAM_URL,is_add,null,0,"");
+                        if(!"✔".equals(change_sign_1)){
+                            change_sign_1=result;
+                        }
+                    }
 
+                }
+
+        }
         //用于更新是否已经跑完所有payload的状态
         for(int i = 0; i < log.size(); i++){
             if(temp_data.equals(log.get(i).data_md5)){
@@ -926,6 +856,233 @@ public class BurpExtender extends AbstractTableModel implements IBurpExtender, I
 
     }
 
+    public String execPlayLoad(IHttpRequestResponse baseRequestResponse,String key,String value,int toolFlag,String recoreMd5,byte paraType,int is_add,String request_data,int json_count,String para_name){
+        int switch_para = 0;
+        String finalSign = "";
+        int original_data_len = callbacks.saveBuffersToTempFiles(baseRequestResponse).getResponse().length;
+        byte[] new_Request = baseRequestResponse.getRequest();
+        //默认只开启 ["'","''"],常规单引号；["-0"，"-1"],单引号被过滤的情况
+        String[] payloadplus={"[\"'\",\"''\"]","[\"-0\"，\"-1\"];;;[0-9]+"};
+        //如果勾选了自定义payload，那么以自定义的为准
+        if(JTextArea_int == 1&&StringUtils.isNotBlank(JTextArea_data_1)){
+            payloadplus = JTextArea_data_1.split("\n");
+        }
+
+        for(String payloadSet:payloadplus){
+            IHttpService iHttpService = baseRequestResponse.getHttpService();
+            //新的请求包
+            IHttpRequestResponse requestResponse = null;
+            String[] parts = payloadSet.split(";;;", 2); // Split into values and optional regex
+            String valuesPart = parts[0]; // The JSON array part
+            String regex = parts.length > 1 ? parts[1] : null; // Regex if present
+            if (regex != null) {
+                try {
+                    if (!value.matches(regex)) {
+                        // If the value doesn't match the regex, skip this payload
+                        continue;
+                    }
+                } catch (PatternSyntaxException e) {
+                    stdout.println("Invalid regex: " + regex);
+                    continue; // Skip this payload if the regex is invalid
+                }
+            }
+            if (regex != null&&!value.matches(regex)) {
+                //如果值匹配不上就不用添加该playload
+                continue;
+            }
+            // Parse the JSON array
+            try {
+                int change=0;
+                //判断数据长度是否会变化
+                String change_sign;//第二个表格中 变化 的内容
+                JSONArray jsonArray = JSONArray.parseArray(valuesPart);
+                for (int i = 0; i < jsonArray.size(); i++) {
+                    int time_1 = 0,time_2 = 0;
+                    String payload = jsonArray.getString(i); // Extract each value
+                    stdout.println("payload: " + payload);
+                    if(JTextArea_int == 1){
+                        //自定义payload //参数值为空
+                        if(diy_payload_2 == 1){
+                            if(payload != "'" && payload !="''" && payload != "-1" && payload != "-0"){
+                                value = "";
+                            }
+                        }
+                    }
+                    if(paraType== 6){
+                        List<String> headers = helpers.analyzeRequest(baseRequestResponse).getHeaders();
+                        if(is_add ==1) {
+                            //json格式
+                            stdout.println("json");
+                            String newBody = "{"; //json body的内容
+                            List<IParameter>paraList= helpers.analyzeRequest(baseRequestResponse).getParameters();
+                            for (IParameter paras : paraList) {//循环所有参数，用来自定义json格式body做准备
+                                if (paras.getType() == 6) {//只要json格式的数据
+                                    if (key == paras.getName() && value == paras.getValue()) {//判断现在的键和值是否是需要添加payload的键和值
+                                        newBody += "\"" + paras.getName() + "\":" + "\"" + paras.getValue() + payload + "\",";//构造json的body
+                                    } else {
+                                        newBody += "\"" + paras.getName() + "\":" + "\"" + paras.getValue() + "\",";//构造json的body
+                                    }
+                                }
+                            }
+
+                            newBody = newBody.substring(0, newBody.length() - 1); //去除最后一个,
+                            newBody += "}";//json body的内容
+
+                            byte[] bodyByte = newBody.getBytes();
+                            byte[] new_Requests = helpers.buildHttpMessage(headers, bodyByte); //关键方法
+
+                            time_1 = (int) System.currentTimeMillis();
+                            requestResponse = callbacks.makeHttpRequest(iHttpService, new_Requests);//发送请求
+                            time_2 = (int) System.currentTimeMillis();
+                        }else if (is_add ==2){
+                            //json嵌套
+
+                            request_data = request_data.replaceAll("\r","");//burp2.x json自动格式美化处理
+                            request_data = request_data.replaceAll("\n","");//burp2.x json自动格式美化处理
+
+                            String[] request_data_temp = request_data.split(",\"");//用于临时保存切割的post体内容
+                            String request_data_body = "";//连接字符串
+                            String request_data_body_temp = "";//修改后的body和需要临时编辑的字符串
+
+
+                            for(int j=0;j < request_data_temp.length;j++){
+                                if(j==json_count){//判断现在修改的参数
+                                    request_data_body_temp = request_data_temp[j];
+
+                                    stdout.println("准备修改的值："+request_data_body_temp);
+                                    while (true){
+                                        //空列表如："test":[]跳过处理
+                                        if(request_data_body_temp.contains(":[]")) {
+                                            stdout.println(request_data_body_temp+"跳过");
+                                            request_data_body += "\""+request_data_temp[j]+",";//把跳过的字符串连接上
+                                            json_count += 1;
+                                            j += 1;
+                                            request_data_body_temp = request_data_temp[j];
+                                        }else {
+                                            break;
+                                        }
+                                    }
+
+
+                                    //null、true、false等跳过处理
+                                    if(request_data_body_temp.toLowerCase().contains(":null") || request_data_body_temp.toLowerCase().contains(":true") || request_data_body_temp.toLowerCase().contains(":false")) {
+                                        stdout.println(request_data_body_temp+"跳过");
+                                        switch_para = 1;
+                                        break;
+                                    }
+
+
+                                    if(request_data_body_temp.contains("\":")){
+
+                                        if(key.equals(para_name)){
+                                            //处理json嵌套列表，这种情况只跑一次
+                                            stdout.println("json嵌套列表，这个参数处理过了，跳过");
+                                            json_count -= 1;
+                                            switch_para = 1;
+                                            break;
+                                        }
+
+                                        //判断字符串中是否有":，如果有则为正常json内容
+                                        Pattern p = Pattern.compile(".*:\\s?\\[?\\s?(.*?$)");
+                                        Matcher m = p.matcher(request_data_body_temp);
+                                        if(m.find()){
+                                            request_data_body_temp = m.group(1);//获取:后面的内容
+                                        }
+                                        if(request_data_body_temp.contains("\"")){//判断内容是否为字符串
+                                            request_data_body_temp = request_data_temp[i];
+                                            //修改内容，添加payload
+                                            request_data_body_temp = request_data_body_temp.replaceAll("^(.*:.*?\")(.*?)(\"[^\"]*)$","$1$2"+payload+"$3");
+                                            stdout.println(request_data_body_temp);
+                                            request_data_body+= "\""+request_data_body_temp +",";
+                                        }else {
+                                            request_data_body_temp = request_data_temp[i];
+                                            //修改内容，添加payload  纯数字
+                                            request_data_body_temp = request_data_body_temp.replaceAll("^(.*:.*?)(\\d*)([^\"\\d]*)$","$1\"$2"+payload+"\"$3");
+                                            stdout.println(request_data_body_temp);
+                                            request_data_body+= "\""+request_data_body_temp +",";
+                                        }
+
+                                    }else {
+                                        stdout.println("处理过，无需处理");
+                                        switch_para = 1;
+                                        if(key.equals(para_name)){
+                                            //处理json嵌套列表，这种情况只跑一次
+                                            stdout.println("json嵌套列表，已经处理过第一个值");
+                                        }
+                                        break;
+
+                                    }
+
+                                }else {
+                                    request_data_body += "\""+request_data_temp[i]+",";
+                                }
+                            }
+
+                            if(switch_para == 1){
+                                //跳过这个参数
+                                break;
+                            }
+
+
+                            request_data_body = request_data_body.substring(0, request_data_body.length() - 1); //去除最后一个,
+                            request_data_body = request_data_body.substring(1,request_data_body.length()); //去除第一个"
+
+                            byte[] bodyByte = request_data_body.getBytes();
+                            byte[] new_Requests = helpers.buildHttpMessage(headers, bodyByte); //关键方法
+                            time_1 = (int) System.currentTimeMillis();
+                            requestResponse = callbacks.makeHttpRequest(iHttpService, new_Requests);//发送请求
+                            time_2 = (int) System.currentTimeMillis();
+
+                        }
+                    }else {
+                        stdout.println("普通格式");
+                        //不是json格式
+                        IParameter newPara = helpers.buildParameter(key,value + payload, paraType); //构造新的参数
+                        byte[] newRequest = helpers.updateParameter(new_Request, newPara);//更新请求包的参数
+
+                        time_1 = (int) System.currentTimeMillis();
+                        requestResponse = callbacks.makeHttpRequest(iHttpService, newRequest);//发送请求
+                        time_2 = (int) System.currentTimeMillis();
+
+                    }
+
+                    if(i==0){
+                        change = requestResponse.getResponse().length;//保存第一次请求响应的长度
+                        change_sign = "";
+                    }else {
+                        if(change != requestResponse.getResponse().length){//判断第一次的长度和现在的是否不同
+                            if( requestResponse.getResponse().length == original_data_len ){
+                                //判断两个payload的长度不一样且和原始包的长度一致,存疑！
+                                change_sign = "✔ ==> ?";
+                                finalSign = "✔";
+                            }else{
+                                //判断两个payload的长度不一样，判断为存在安全风险
+                                change_sign = "✔ "+ (change-requestResponse.getResponse().length);
+                                finalSign = "✔";
+                            }
+                        }else {
+                            //第一次包和第二次包的长度一样
+                            change_sign = "";
+                        }
+                    }
+                    if(jsonArray.size()==1){
+                        //只有一个payload的情况下，直接跟原始返回大小比对，如果不同，设为存疑
+                        if(change!=original_data_len){
+                            change_sign = "✔ ==> ?";
+                            finalSign = "✔";
+                        }else{
+                            //第一次包和第二次包的长度一样
+                            change_sign = "";
+                        }
+                    }
+                    log2.add(new LogEntry(conut,toolFlag, callbacks.saveBuffersToTempFiles(requestResponse),helpers.analyzeRequest(requestResponse).getUrl(),key,value+payload,change_sign,recoreMd5,time_2-time_1,"end",helpers.analyzeResponse(requestResponse.getResponse()).getStatusCode()));
+                }
+            } catch (JSONException e) {
+                stdout.println("Error parsing JSON: " + e.getMessage());
+            }
+        }
+        return finalSign;
+    }
     @Override
     public List<IScanIssue> doActiveScan(IHttpRequestResponse baseRequestResponse, IScannerInsertionPoint insertionPoint) {
         return null;
